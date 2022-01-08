@@ -15,3 +15,9 @@ class SKBuildGeneratorNotFoundError(SKBuildError):
     platform.
     """
     pass
+
+
+class PythonLibraryNotFound(SKBuildError):
+    """Exception raised when no shared Python library was found on the system.
+    """
+    pass

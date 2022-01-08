@@ -4,7 +4,6 @@ This module provides an interface for invoking CMake executable.
 
 from __future__ import print_function
 import argparse
-import distutils.sysconfig as du_sysconfig
 import glob
 import io
 import itertools
@@ -22,7 +21,7 @@ from .constants import (CMAKE_BUILD_DIR,
                         CMAKE_INSTALL_DIR,
                         SETUPTOOLS_INSTALL_DIR)
 from .platform_specifics import get_platform
-from .exceptions import SKBuildError
+from .exceptions import SKBuildError, PythonLibraryNotFound
 
 RE_FILE_INSTALL = re.compile(
     r"""[ \t]*file\(INSTALL DESTINATION "([^"]+)".*"([^"]+)"\).*""")
@@ -442,6 +441,9 @@ class CMaker(object):
             python_library = '.../conda/envs/py37/include/python3.7m'
         """
         # determine direct path to libpython
+        # TODO: This returns the static library with no path on Ubuntu 21.10
+        #       e.g. 'libpython3.9.a'
+        #       In which constellation does this return a dynamic library?
         python_library = sysconfig.get_config_var('LIBRARY')
 
         # if static (or nonexistent), try to find a suitable dynamic libpython
@@ -454,7 +456,7 @@ class CMaker(object):
             if hasattr(sys, "pypy_version_info"):
                 candidate_implementations = ['pypy-c', 'pypy3-c']
 
-            candidate_extensions = ['.lib', '.so', '.a']
+            candidate_extensions = ['.lib', '.so']
             if sysconfig.get_config_var('WITH_DYLD'):
                 candidate_extensions.insert(0, '.dylib')
 
@@ -471,17 +473,20 @@ class CMaker(object):
 
             # Ensure the value injected by virtualenv is
             # returned on windows.
+            # TODO: This is not valid (anymore? Since when?):
+            # multiarchsubdir is not empty on Ubuntu 21.10
             # Because calling `sysconfig.get_config_var('multiarchsubdir')`
             # returns an empty string on Linux, `du_sysconfig` is only used to
             # get the value of `LIBDIR`.
-            libdir = du_sysconfig.get_config_var('LIBDIR')
+            libdir = sysconfig.get_config_var('LIBDIR')
             if sysconfig.get_config_var('MULTIARCH'):
                 masd = sysconfig.get_config_var('multiarchsubdir')
-                if masd:
+                if masd and masd not in libdir:
                     if masd.startswith(os.sep):
                         masd = masd[len(os.sep):]
                     libdir = os.path.join(libdir, masd)
 
+            # TODO: When is this needed?
             if libdir is None:
                 libdir = os.path.abspath(os.path.join(
                     sysconfig.get_config_var('LIBDEST'), "..", "libs"))
@@ -503,10 +508,10 @@ class CMaker(object):
             for candidate in candidates:
                 if os.path.exists(candidate):
                     # we found a (likely alternate) libpython
-                    python_library = candidate
-                    break
+                    return candidate
 
-        # TODO(opadron): what happens if we don't find a libpython?
+            # No suitable Python library could be found.
+            raise PythonLibraryNotFound
 
         return python_library
 
